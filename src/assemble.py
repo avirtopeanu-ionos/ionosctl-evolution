@@ -21,6 +21,10 @@ def load_csv(name, key="tag"):
             d[row[key]] = row
     return d
 
+# representative product implementations' LOC (data/file_evo.csv), keyed by version
+PRODUCTS = ["datacenter", "server", "lan", "k8s"]
+file_evo = load_csv("file_evo.csv")
+
 # normalized per-version metadata, regardless of source
 meta = {}
 if FULL:
@@ -73,6 +77,7 @@ for v in ORDER:
         "cyclo_over15": m["cyclo_over15"],
         "clone_groups": clones,
         "clones_per_10k": round(clones / own * 10000, 1) if own else 0,
+        "product_loc": {p: int(file_evo.get(v, {}).get(p, 0) or 0) for p in PRODUCTS},
     })
 
 print(f"source: {'FULL (all stable tags)' if FULL else 'sampled (10 tags)'} — {len(rows)} versions")

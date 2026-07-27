@@ -26,6 +26,10 @@ except Exception:
     first_commit = ""
 DEF_MONTHS = cfg.get("months", 6)
 DEF_STOP   = cfg.get("stop_date", first_commit or data[0]["date"])
+# first release that includes Alexandru's work = earliest version dated >= first commit
+FIRST_VER = next((r["version"] for r in data if first_commit and r["date"] >= first_commit), "")
+FIRST_VER_DATE = next((r["date"] for r in data if r["version"] == FIRST_VER), "")
+PRODUCTS = ["datacenter", "server", "lan", "k8s"]
 
 DATA_JS = json.dumps(data); CAD_JS = json.dumps(cadence)
 JRN_JS = json.dumps(journey); USR_JS = json.dumps(users)
@@ -104,12 +108,13 @@ html = f"""<!DOCTYPE html>
   <button id="m_reset" style="align-self:flex-end;background:#0c1226;border:1px solid var(--grid);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer">Reset</button>
   <span class="rd" id="m_readout"></span>
 </div>
+{f'''<div style="color:var(--mut);font-size:12px;margin:2px 0 -6px"><span style="display:inline-block;width:22px;border-top:2px dashed #ff6b8a;vertical-align:middle;margin-right:6px"></span>first avirtopeanu contribution — <b style="color:var(--ink)">{FIRST_VER}</b> ({FIRST_VER_DATE[:7]}); shown on charts when the range reaches back before it</div>''' if FIRST_VER else ''}
 
 <div class="kpis">
   <div class="kpi"><div class="n">{l['commands']}</div><div class="d">commands (was {f['commands']})</div>
     <span class="delta up">{pct(f['commands'],l['commands'])}</span></div>
-  <div class="kpi"><div class="n">{l['loc_per_command']}</div><div class="d">own-code lines per command (was {f['loc_per_command']})</div>
-    <span class="delta down">{pct(f['loc_per_command'],l['loc_per_command'])}</span></div>
+  <div class="kpi"><div class="n">{l['bats']}</div><div class="d">integration test suites (was {f['bats']})</div>
+    <span class="delta up">+{l['bats']-f['bats']}</span></div>
   <div class="kpi"><div class="n">{l['sdk_deps']}</div><div class="d">bundled IONOS API SDKs (was {f['sdk_deps']})</div>
     <span class="delta up">{pct(f['sdk_deps'],l['sdk_deps'])}</span></div>
   <div class="kpi"><div class="n">{l['contributors']}</div><div class="d">cumulative contributors (was {f['contributors']})</div>
@@ -126,9 +131,9 @@ html = f"""<!DOCTYPE html>
 {users_panel}
 
 <h2 class="sec">Developer friction</h2>
-<div class="panel"><h3>Own-code lines per command</h3>
-  <p>Own-code lines of code (vendor excluded) divided by command count, per release.</p>
-  <canvas id="c_friction"></canvas></div>
+<div class="panel"><h3>Lines of code per product</h3>
+  <p>Command-layer lines of code implementing four representative products (files bucketed by path). Tracks how much code each product's commands take over time, across the file/dir restructures.</p>
+  <canvas id="c_products"></canvas></div>
 <div class="panel"><h3>Command count vs. code size, indexed</h3>
   <p>Both series scaled so the leftmost shown release = 100. Shows how command count and own-code size grew relative to that baseline.</p>
   <canvas id="c_divergence"></canvas></div>
@@ -169,12 +174,31 @@ html = f"""<!DOCTYPE html>
 </div>
 <script>
 const D = {DATA_JS}, CAD = {CAD_JS}, JRN = {JRN_JS}, USR = {USR_JS};
+const FIRST_COMMIT='{first_commit}', PRODUCTS={json.dumps(PRODUCTS)};
 const ink='#e8ecf7',mut='#8b96b8',acc='#4f9dff',good='#31d0aa',warn='#ffb454',red='#ff6b8a',grid='#232a44';
 Chart.defaults.color=mut; Chart.defaults.font.family='inherit';
 const gc={{grid:{{color:grid}},ticks:{{color:mut}}}};
 const base=(extra={{}})=>({{responsive:true,animation:{{duration:300}},plugins:{{legend:{{labels:{{color:ink,usePointStyle:true,boxWidth:8}}}}}},
   scales:{{x:{{...gc}},y:{{...gc,beginAtZero:true}}}},...extra}});
 function fill(ctx,c){{const g=ctx.createLinearGradient(0,0,0,320);g.addColorStop(0,c+'55');g.addColorStop(1,c+'05');return g;}}
+
+// vertical marker at Alexandru's first commit — drawn only when the shown range reaches before it
+let CUR=[];
+const fcPlugin={{id:'fc',afterDatasetsDraw(chart){{
+  if(!FIRST_COMMIT||CUR.length<2) return;
+  const dts=CUR.map(r=>parse(r.date)), fc=parse(FIRST_COMMIT);
+  if(fc<=dts[0]||fc>dts[dts.length-1]) return;      // only if it falls inside the visible range
+  let i=0; while(i<dts.length-1 && dts[i+1]<fc) i++;
+  const x=chart.scales.x, p0=x.getPixelForValue(i), p1=x.getPixelForValue(Math.min(i+1,dts.length-1));
+  const span=dts[i+1]-dts[i], frac=span?(fc-dts[i])/span:0, px=p0+frac*(p1-p0);
+  const {{top,bottom}}=chart.chartArea, ctx=chart.ctx;
+  ctx.save();
+  ctx.strokeStyle=red; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(px,top); ctx.lineTo(px,bottom); ctx.stroke();
+  ctx.setLineDash([]); ctx.fillStyle=red; ctx.font='10px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('avirtopeanu', px+4, top+10);
+  ctx.restore();
+}}}};
 
 // ---- version selector: resample D by month step, from newest back to stop date ----
 const DAY=86400000;
@@ -195,11 +219,11 @@ function resample(months, stopISO){{
 
 let charts=[];
 function destroy(){{charts.forEach(c=>c.destroy());charts=[];}}
-function mk(id,cfg){{const c=new Chart(document.getElementById(id),cfg);charts.push(c);return c;}}
+function mk(id,cfg){{cfg.plugins=(cfg.plugins||[]).concat(fcPlugin);const c=new Chart(document.getElementById(id),cfg);charts.push(c);return c;}}
 const line=(label,data,color,f=false)=>({{label,data,borderColor:color,backgroundColor:f?(ctx=>fill(ctx.chart.ctx,color)):undefined,fill:f,tension:.35,pointRadius:2}});
 
 function render(S){{
-  destroy();
+  destroy(); CUR=S;
   const L=S.map(r=>r.version+' · '+r.date.slice(0,7));
   mk('c_cmds',{{type:'line',data:{{labels:L,datasets:[
     line('Total commands',S.map(r=>r.commands),acc,true),
@@ -207,8 +231,9 @@ function render(S){{
   mk('c_sdk',{{type:'line',data:{{labels:L,datasets:[
     line('Bundled API SDKs',S.map(r=>r.sdk_deps),acc,true),
     line('Contributors',S.map(r=>r.contributors),warn)]}},options:base()}});
-  mk('c_friction',{{type:'line',data:{{labels:L,datasets:[line('LOC per command',S.map(r=>r.loc_per_command),good,true)]}},
-    options:base({{plugins:{{legend:{{display:false}}}}}})}});
+  const PCOL={{datacenter:acc,server:good,lan:warn,k8s:red}};
+  mk('c_products',{{type:'line',data:{{labels:L,datasets:PRODUCTS.map(p=>
+    line(p,S.map(r=>r.product_loc[p]),PCOL[p]))}},options:base()}});
   const b0c=S[0].commands,b0l=S[0].own_loc;
   mk('c_divergence',{{type:'line',data:{{labels:L,datasets:[
     line('Commands (indexed)',S.map(r=>Math.round(r.commands/b0c*1000)/10),acc,true),
