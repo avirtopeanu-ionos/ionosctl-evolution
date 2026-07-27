@@ -2,11 +2,19 @@
 .DEFAULT_GOAL := all
 SHELL := /bin/bash
 
-.PHONY: all sampled full cadence users journey data dashboard regen sprint open clean distclean
+.PHONY: all sampled full cadence downloads commits users journey data dashboard dashboard-local regen sprint open clean distclean
 
 ## all: full-resolution pipeline (all stable tags) -> data -> dashboard
-all: full cadence data dashboard
+all: full cadence downloads commits data dashboard
 	@echo "OPEN: file://$(CURDIR)/dashboard.html"
+
+## downloads: GitHub release download counts -> data/downloads.json (public)
+downloads:
+	@bash src/gh_downloads.sh
+
+## commits: commit-type mix per year -> data/commit_types.csv
+commits:
+	@bash src/commit_types.sh
 
 ## full: build+introspect+health for ALL stable tags -> data/rows_all.ndjson + data/meta_all.csv
 full:
@@ -16,9 +24,10 @@ full:
 cadence:
 	@bash src/release_cadence.sh >/dev/null && echo "wrote data/cadence.json"
 
-## users: Snap Store install-base time series -> data/users.json (needs snapcraft store auth)
+## users: Snap weekly-active + OS breakdown -> data/users.json + data/snap_os.json (owner-gated, local only)
 users:
 	@bash src/snap_users.sh
+	@bash src/snap_breakdown.sh
 
 ## journey: live-API friction, old vs new binary -> data/journey.json (needs IONOS_TOKEN + `make sampled` bins)
 journey:
@@ -37,7 +46,7 @@ dashboard-local:
 	@INCLUDE_SNAP=1 python3 src/gen_dashboard.py && echo "wrote dashboard.local.html (gitignored)"
 
 ## regen: rebuild data + dashboard from existing datasets (no rebuild of binaries/tags)
-regen: cadence data dashboard
+regen: cadence downloads commits data dashboard
 	@echo "OPEN: file://$(CURDIR)/dashboard.html"
 
 ## sampled: quick 10-tag path (builds bins/, introspect, git metrics, health)

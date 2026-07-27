@@ -9,13 +9,20 @@ data = json.load(open(os.path.join(DATA, "data.json")))
 def load(name, default):
     p = os.path.join(DATA, name)
     return json.load(open(p)) if os.path.exists(p) else default
-cadence = load("cadence.json", [])
-journey = load("journey.json", [])
-cfg     = load("config.json", {})
+cadence   = load("cadence.json", [])
+downloads = load("downloads.json", [])
+services  = load("services.json", [])
+cfg       = load("config.json", {})
+import csv as _csv
+def load_csv_rows(name):
+    p = os.path.join(DATA, name)
+    return list(_csv.DictReader(open(p))) if os.path.exists(p) else []
+commit_types = load_csv_rows("commit_types.csv")
 # Snap install base is owner-gated (not public). Only embed it into a local, gitignored
 # dashboard when INCLUDE_SNAP=1; the committed dashboard.html never contains these numbers.
 INCLUDE_SNAP = os.environ.get("INCLUDE_SNAP") == "1"
 users   = load("users.json", []) if INCLUDE_SNAP else []
+snap_os = load("snap_os.json", []) if INCLUDE_SNAP else []
 
 # default left bound = first commit by Alexandru (falls back to earliest data date)
 try:
@@ -31,17 +38,28 @@ FIRST_VER = next((r["version"] for r in data if first_commit and r["date"] >= fi
 FIRST_VER_DATE = next((r["date"] for r in data if r["version"] == FIRST_VER), "")
 PRODUCTS = ["datacenter", "server", "lan", "k8s"]
 
-DATA_JS = json.dumps(data); CAD_JS = json.dumps(cadence)
-JRN_JS = json.dumps(journey); USR_JS = json.dumps(users)
+DATA_JS = json.dumps(data); CAD_JS = json.dumps(cadence); USR_JS = json.dumps(users)
+DL_JS = json.dumps(downloads); CT_JS = json.dumps(commit_types); SNAPOS_JS = json.dumps(snap_os)
 f, l = data[0], data[-1]
 def pct(a, b): return f"{'+' if b>=a else ''}{round((b-a)/a*100)}%"
 
+# service first-appearance timeline (HTML list)
+svc_html = "<div class='svct'>" + "".join(
+    f"<div class='svci'><span class='svcd'>{s['date'][:7]}</span>"
+    f"<span class='svcdot'></span><span class='svcn'>{s['service']}</span>"
+    f"<span class='svcv'>{s['version']}</span></div>" for s in services) + "</div>"
 
 users_panel = ""
 if users:
     users_panel = """<div class="panel"><h3>Snap Store weekly active users</h3>
   <p>Weekly active devices running the ionosctl snap (users active on ionosctl that week), sampled monthly from the Snap Store metrics API (publisher: ionos-cloud).</p>
   <canvas id="c_users"></canvas></div>"""
+
+snap_os_panel = ""
+if snap_os:
+    snap_os_panel = """<div class="panel"><h3>Snap install base by OS</h3>
+  <p>Operating systems of devices with the ionosctl snap installed (grouped by distribution).</p>
+  <canvas id="c_snapos" style="max-height:300px"></canvas></div>"""
 
 html = f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -87,6 +105,10 @@ html = f"""<!DOCTYPE html>
   table.jt{{width:100%;border-collapse:collapse;margin-top:6px;font-size:14px}}
   table.jt th,table.jt td{{text-align:left;padding:8px 10px;border-bottom:1px solid var(--grid)}}
   table.jt th{{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}}
+  .svct{{display:flex;flex-direction:column;margin-top:6px}}
+  .svci{{display:grid;grid-template-columns:64px 14px 1fr auto;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--grid)}}
+  .svcd{{color:var(--mut);font-size:12px}} .svcdot{{width:9px;height:9px;border-radius:50%;background:var(--acc)}}
+  .svcn{{color:var(--ink);font-weight:600}} .svcv{{color:var(--mut);font-size:12px}}
   footer{{color:var(--mut);font-size:12px;margin-top:40px;border-top:1px solid var(--grid);padding-top:18px}}
   @media(max-width:820px){{.kpis{{grid-template-columns:repeat(2,1fr)}}}}
 </style></head><body><div class="wrap">
@@ -121,6 +143,12 @@ html = f"""<!DOCTYPE html>
 <div class="panel"><h3>APIs integrated and contributors</h3>
   <p>Bundled IONOS SDK modules (one per API wired into the CLI) and cumulative unique commit authors, per release.</p>
   <canvas id="c_sdk"></canvas></div>
+<div class="panel"><h3>GitHub release downloads</h3>
+  <p>Total downloads of each release's GitHub assets (all releases; not affected by the selector). Older releases had more time to accumulate. {sum(x['downloads'] for x in downloads):,} downloads across {len(downloads)} releases.</p>
+  <canvas id="c_downloads"></canvas></div>
+<div class="panel"><h3>Cloud services over time</h3>
+  <p>When each cloud service first appeared as a top-level command. (<code>compute</code> is dated to when the grouping was introduced; its resources existed as individual commands earlier.)</p>
+  {svc_html}</div>
 {users_panel}
 
 <h2 class="sec">Developer friction</h2>
@@ -142,10 +170,19 @@ html = f"""<!DOCTYPE html>
   <p>Total command-specific flags summed across all commands (excludes inherited global flags), per release.</p>
   <canvas id="c_flags"></canvas></div>
 
+<h2 class="sec">Maintenance &amp; maturity</h2>
+<div class="panel"><h3>Commit type mix per year</h3>
+  <p>Commits grouped by conventional-commit prefix each year (not affected by the selector). A growing share of fix / refactor / test work indicates a maturing, stabilizing codebase.</p>
+  <canvas id="c_commits"></canvas></div>
+
 <h2 class="sec">Tests</h2>
 <div class="panel"><h3>Unit and integration tests</h3>
   <p>Unit test files (<code>_test.go</code>) and BATs integration suites per release.</p>
   <canvas id="c_bats"></canvas></div>
+<div class="panel"><h3>Test-to-code ratio</h3>
+  <p>Test functions (<code>Test*</code>/<code>Example*</code>) per 1,000 own-code lines, per release.</p>
+  <canvas id="c_testratio"></canvas></div>
+{snap_os_panel}
 
 <h2 class="sec">Release velocity</h2>
 <div class="panel"><h3>Stable releases per quarter</h3>
@@ -163,7 +200,7 @@ html = f"""<!DOCTYPE html>
 </footer>
 </div>
 <script>
-const D = {DATA_JS}, CAD = {CAD_JS}, JRN = {JRN_JS}, USR = {USR_JS};
+const D = {DATA_JS}, CAD = {CAD_JS}, USR = {USR_JS}, DL = {DL_JS}, CT = {CT_JS}, SNAPOS = {SNAPOS_JS};
 const FIRST_COMMIT='{first_commit}', PRODUCTS={json.dumps(PRODUCTS)};
 const ink='#e8ecf7',mut='#8b96b8',acc='#4f9dff',good='#31d0aa',warn='#ffb454',red='#ff6b8a',grid='#232a44';
 Chart.defaults.color=mut; Chart.defaults.font.family='inherit';
@@ -239,6 +276,8 @@ function render(S){{
     {{label:'Unit test files',data:S.map(r=>r.unit_test_files),backgroundColor:warn+'cc',borderRadius:4,stack:'t'}},
     {{label:'Integration suites (BATs)',data:S.map(r=>r.bats),backgroundColor:good+'cc',borderRadius:4,stack:'t'}}]}},
     options:base({{scales:{{x:{{...gc,stacked:true}},y:{{...gc,stacked:true}}}}}})}});
+  mk('c_testratio',{{type:'line',data:{{labels:L,datasets:[line('Test funcs per 1k LOC',S.map(r=>r.test_ratio),good,true)]}},
+    options:base({{plugins:{{legend:{{display:false}}}},scales:{{x:{{...gc}},y:{{...gc,beginAtZero:false}}}}}})}});
   buildCapGrid(S);
   document.getElementById('m_readout').innerHTML='showing <b>'+S.length+'</b> of '+D.length+' releases';
 }}
@@ -267,6 +306,23 @@ new Chart(c_churn,{{type:'bar',data:{{labels:D.map(r=>r.version),datasets:[
 new Chart(c_cadence,{{type:'bar',data:{{labels:CAD.map(c=>c.quarter),datasets:[
   {{label:'Releases',data:CAD.map(c=>c.releases),backgroundColor:acc+'cc',borderRadius:4}}]}},
   options:base({{plugins:{{legend:{{display:false}}}}}})}});
+new Chart(c_downloads,{{type:'bar',data:{{labels:DL.map(r=>r.tag),datasets:[
+  {{label:'Downloads',data:DL.map(r=>r.downloads),backgroundColor:good+'cc'}}]}},
+  options:base({{plugins:{{legend:{{display:false}}}},scales:{{x:{{...gc,ticks:{{color:mut,autoSkip:true,maxRotation:90}}}},y:{{...gc,beginAtZero:true}}}}}})}});
+{{
+  const CT_CATS=[['feature',good],['fix',red],['refactor',acc],['test',warn],['docs',mut],['other','#555c7a']];
+  new Chart(c_commits,{{type:'bar',data:{{labels:CT.map(r=>r.year),datasets:CT_CATS.map(([c,col])=>
+    ({{label:c,data:CT.map(r=>+r[c]||0),backgroundColor:col+'cc',stack:'s'}}))}},
+    options:base({{scales:{{x:{{...gc,stacked:true}},y:{{...gc,stacked:true}}}}}})}});
+}}
+if(SNAPOS.length && document.getElementById('c_snapos')){{
+  const fam={{}}; SNAPOS.forEach(r=>{{const k=r.os.split('/')[0];fam[k]=(fam[k]||0)+r.count;}});
+  const ent=Object.entries(fam).sort((a,b)=>b[1]-a[1]);
+  const pal=[acc,good,warn,red,'#a78bfa','#f472b6','#555c7a'];
+  new Chart(c_snapos,{{type:'doughnut',data:{{labels:ent.map(e=>e[0]),datasets:[
+    {{data:ent.map(e=>e[1]),backgroundColor:ent.map((_,i)=>pal[i%pal.length]),borderColor:'#151b31'}}]}},
+    options:{{responsive:true,plugins:{{legend:{{position:'right',labels:{{color:ink,boxWidth:10}}}}}}}}}});
+}}
 if(USR.length && document.getElementById('c_users')) new Chart(c_users,{{type:'line',data:{{labels:USR.map(u=>u.date.slice(0,7)),datasets:[
   {{label:'Snap devices',data:USR.map(u=>u.users),borderColor:good,backgroundColor:ctx=>fill(ctx.chart.ctx,good),fill:true,tension:.35,pointRadius:2}}]}},
   options:base({{plugins:{{legend:{{display:false}}}}}})}});

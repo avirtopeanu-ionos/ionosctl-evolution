@@ -90,6 +90,7 @@ for v in ORDER:
         "product_loc": {p: int(file_evo.get(v, {}).get(p, 0) or 0) for p in PRODUCTS},
         "cmds_added": added,
         "cmds_removed": removed,
+        "test_ratio": round(i["leaf_commands"] and m["test_funcs"] / own * 1000, 1) if own else 0,
     })
 
 print(f"source: {'FULL (all stable tags)' if FULL else 'sampled (10 tags)'} — {len(rows)} versions")
@@ -97,6 +98,18 @@ print(f"source: {'FULL (all stable tags)' if FULL else 'sampled (10 tags)'} — 
 out = os.path.join(BASE, "data.json")
 json.dump(rows, open(out, "w"), indent=2)
 print("wrote", out)
+
+# service first-appearance timeline: earliest date each current top-level service showed up
+current = intro[ORDER[-1]].get("top_level_list", [])
+services = []
+for svc in current:
+    for v in ORDER:
+        if svc in intro[v].get("top_level_list", []):
+            services.append({"service": svc, "version": v, "date": meta[v]["date"]})
+            break
+services.sort(key=lambda s: s["date"])
+json.dump(services, open(os.path.join(BASE, "services.json"), "w"), indent=2)
+print("wrote services.json -", len(services), "services")
 # quick deltas
 f, l = rows[0], rows[-1]
 def d(k): return f"{f[k]} -> {l[k]}"
