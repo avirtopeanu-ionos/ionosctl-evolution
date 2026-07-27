@@ -79,9 +79,6 @@
 
 
 <h2 class="sec">Developer friction</h2>
-<div class="panel"><h3>Lines of code per product</h3>
-  <p>Command-layer lines of code implementing four representative products (files bucketed by path). Tracks how much code each product's commands take over time, across the file/dir restructures.</p>
-  <canvas id="c_products"></canvas></div>
 <div class="panel"><h3>Command count vs. code size, indexed</h3>
   <p>Both series scaled so the leftmost shown release = 100. Shows how command count and own-code size grew relative to that baseline.</p>
   <canvas id="c_divergence"></canvas></div>
@@ -114,11 +111,6 @@
 <div class="panel"><h3>Visible commands added and removed per release</h3>
   <p>End-user commands added (up) and removed (down) between consecutive releases, across all releases (not affected by the selector). Removals are the main source of breaking changes; recent restructures keep removed commands as hidden aliases so existing scripts keep working.</p>
   <canvas id="c_churn"></canvas></div>
-
-<h2 class="sec">Capability comparison</h2>
-<div class="panel"><h3>What the CLI can do — early ionosctl vs today</h3>
-  <p>Concrete capabilities, not wall-clock. Command speed is bounded by the API; the CLI's job is to be powerful, trustable and stable. A faster wait matters less than a wait you can trust to mean the resource is actually ready.</p>
-  <table class='jt'><tr><th>Capability</th><th>early ionosctl</th><th>today</th></tr><tr><td>Cloud services managed</td><td>compute only (VMs, storage, network)</td><td>14 services — compute, K8s, DNS, DBaaS, Kafka, VPN, CDN, certs, logging, registry, object storage, …</td></tr><tr><td>Wait for readiness</td><td>only where a dev hand-added <code>--wait-for-request</code>; returns when the request is <em>accepted</em></td><td>global <code>--wait</code> on every command; returns only when the resource is <em>AVAILABLE</em>, shared <code>--timeout</code></td></tr><tr><td>Filter / query output</td><td>pipe raw JSON to an external <code>jq</code></td><td>built-in <code>--query</code> (JMESPath) and <code>--filters</code></td></tr><tr><td>Output control</td><td><code>text</code>, <code>json</code></td><td><code>text</code>, <code>json</code>, <code>api-json</code>, plus <code>--cols</code> / <code>--no-headers</code> on every command</td></tr><tr><td>Pagination</td><td>none — fetch everything</td><td><code>--limit</code> / <code>--offset</code> / <code>--max-results</code></td></tr><tr><td>Global capabilities on every command</td><td>3</td><td>8</td></tr><tr><td>Backward compatibility</td><td>commands moved or removed outright</td><td>restructured commands kept as hidden aliases so existing scripts keep working</td></tr></table></div>
 
 <footer>
   Reproducible: <code>make</code> rebuilds everything. <code>make full</code> builds all stable tags for the version selector. <code>make users</code> refreshes Snap install base. <code>make sprint</code> diffs HEAD vs ~3 weeks ago.
@@ -184,9 +176,6 @@ function render(S){
   mk('c_sdk',{type:'line',data:{labels:L,datasets:[
     line('Bundled API SDKs',S.map(r=>r.sdk_deps),acc,true),
     line('Contributors',S.map(r=>r.contributors),warn)]},options:base()});
-  const PCOL={datacenter:acc,server:good,lan:warn,k8s:red};
-  mk('c_products',{type:'line',data:{labels:L,datasets:PRODUCTS.map(p=>
-    line(p,S.map(r=>r.product_loc[p]),PCOL[p]))},options:base()});
   const b0c=S[0].commands,b0l=S[0].own_loc;
   mk('c_divergence',{type:'line',data:{labels:L,datasets:[
     line('Commands (indexed)',S.map(r=>Math.round(r.commands/b0c*1000)/10),acc,true),
