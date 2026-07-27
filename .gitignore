@@ -1,0 +1,10 @@
+# generated datasets — regenerate with `make`
+/data/
+# compiled release binaries (hundreds of MB) — `make full` / `make sampled`
+/bins/
+# local dashboard variant with owner-gated Snap install-base — never publish
+/dashboard.local.html
+# logs / editor
+*.output
+*.log
+.DS_Store
