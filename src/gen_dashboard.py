@@ -36,7 +36,6 @@ DEF_STOP   = cfg.get("stop_date", first_commit or data[0]["date"])
 # first release that includes Alexandru's work = earliest version dated >= first commit
 FIRST_VER = next((r["version"] for r in data if first_commit and r["date"] >= first_commit), "")
 FIRST_VER_DATE = next((r["date"] for r in data if r["version"] == FIRST_VER), "")
-PRODUCTS = ["datacenter", "server", "lan", "k8s"]
 
 DATA_JS = json.dumps(data); CAD_JS = json.dumps(cadence); USR_JS = json.dumps(users)
 DL_JS = json.dumps(downloads); CT_JS = json.dumps(commit_types); SNAPOS_JS = json.dumps(snap_os)
@@ -201,7 +200,7 @@ html = f"""<!DOCTYPE html>
 </div>
 <script>
 const D = {DATA_JS}, CAD = {CAD_JS}, USR = {USR_JS}, DL = {DL_JS}, CT = {CT_JS}, SNAPOS = {SNAPOS_JS};
-const FIRST_COMMIT='{first_commit}', PRODUCTS={json.dumps(PRODUCTS)};
+const FIRST_COMMIT='{first_commit}';
 const ink='#e8ecf7',mut='#8b96b8',acc='#4f9dff',good='#31d0aa',warn='#ffb454',red='#ff6b8a',grid='#232a44';
 Chart.defaults.color=mut; Chart.defaults.font.family='inherit';
 const gc={{grid:{{color:grid}},ticks:{{color:mut}}}};
