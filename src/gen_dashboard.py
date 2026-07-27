@@ -36,17 +36,30 @@ JRN_JS = json.dumps(journey); USR_JS = json.dumps(users)
 f, l = data[0], data[-1]
 def pct(a, b): return f"{'+' if b>=a else ''}{round((b-a)/a*100)}%"
 
-jr = ""
-if journey:
-    jr = "<table class='jt'><tr><th></th><th>commands</th><th>keystrokes</th><th>wall-clock</th><th>wait mechanism</th></tr>"
-    for r in journey:
-        jr += f"<tr><td>{r['binary']}</td><td>{r['commands']}</td><td>{r['keystrokes']}</td><td>{r['wall_clock_s']}s</td><td><code>{r['wait_mechanism']}</code></td></tr>"
-    jr += "</table>"
+# capability comparison — concrete power/reliability, not wall-clock (speed is bounded by the API)
+oldcap = next((r['capabilities'] for r in data if r['version'].startswith('v6.0')), data[0]['capabilities'])
+COMPARE = [
+    ("Cloud services managed", "compute only (VMs, storage, network)",
+     "14 services — compute, K8s, DNS, DBaaS, Kafka, VPN, CDN, certs, logging, registry, object storage, …"),
+    ("Wait for readiness", "only where a dev hand-added <code>--wait-for-request</code>; returns when the request is <em>accepted</em>",
+     "global <code>--wait</code> on every command; returns only when the resource is <em>AVAILABLE</em>, shared <code>--timeout</code>"),
+    ("Filter / query output", "pipe raw JSON to an external <code>jq</code>",
+     "built-in <code>--query</code> (JMESPath) and <code>--filters</code>"),
+    ("Output control", "<code>text</code>, <code>json</code>",
+     "<code>text</code>, <code>json</code>, <code>api-json</code>, plus <code>--cols</code> / <code>--no-headers</code> on every command"),
+    ("Pagination", "none — fetch everything",
+     "<code>--limit</code> / <code>--offset</code> / <code>--max-results</code>"),
+    ("Global capabilities on every command", f"{oldcap}", f"{l['capabilities']}"),
+    ("Backward compatibility", "commands moved or removed outright",
+     "restructured commands kept as hidden aliases so existing scripts keep working"),
+]
+comp_table = "<table class='jt'><tr><th>Capability</th><th>early ionosctl</th><th>today</th></tr>" + "".join(
+    f"<tr><td>{a}</td><td>{o}</td><td>{n}</td></tr>" for a, o, n in COMPARE) + "</table>"
 
 users_panel = ""
 if users:
-    users_panel = """<div class="panel"><h3>Snap Store install base</h3>
-  <p>Devices with the ionosctl snap installed, sampled monthly from the Snap Store metrics API (publisher: ionos-cloud).</p>
+    users_panel = """<div class="panel"><h3>Snap Store weekly active users</h3>
+  <p>Weekly active devices running the ionosctl snap (users active on ionosctl that week), sampled monthly from the Snap Store metrics API (publisher: ionos-cloud).</p>
   <canvas id="c_users"></canvas></div>"""
 
 html = f"""<!DOCTYPE html>
@@ -82,12 +95,14 @@ html = f"""<!DOCTYPE html>
   .ctl input{{background:#0c1226;border:1px solid var(--grid);color:var(--ink);border-radius:8px;padding:6px 9px;font:inherit;width:150px}}
   .ctl .rd{{margin-left:auto;color:var(--mut);font-size:13px}}
   .ctl b{{color:var(--ink)}}
-  .capgrid{{display:flex;flex-direction:column;gap:6px;margin-top:6px}}
-  .caprow{{display:grid;align-items:center;gap:6px}}
+  #capgrid{{overflow-x:auto}}
+  .capgrid{{display:flex;flex-direction:column;gap:6px;margin-top:6px;min-width:min-content}}
+  .caprow{{display:grid;align-items:center;gap:4px}}
   .capname{{color:var(--ink);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
-  .capcell{{height:22px;border-radius:5px}}
+  .capcell{{height:22px;border-radius:5px;min-width:22px}}
   .capcell.on{{background:var(--good)}} .capcell.off{{background:#1c2340;border:1px solid var(--grid)}}
-  .caphdr .capcell{{background:transparent}} .caphv{{color:var(--mut);font-size:11px;text-align:center;height:auto}}
+  .caphdr .capcell{{background:transparent}}
+  .caphv{{color:var(--mut);font-size:10px;height:70px;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;align-self:end}}
   table.jt{{width:100%;border-collapse:collapse;margin-top:6px;font-size:14px}}
   table.jt th,table.jt td{{text-align:left;padding:8px 10px;border-bottom:1px solid var(--grid)}}
   table.jt th{{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}}
@@ -122,9 +137,6 @@ html = f"""<!DOCTYPE html>
 </div>
 
 <h2 class="sec">Growth &amp; reach</h2>
-<div class="panel"><h3>Command count</h3>
-  <p>Total commands and end-user (leaf) commands per release.</p>
-  <canvas id="c_cmds"></canvas></div>
 <div class="panel"><h3>APIs integrated and contributors</h3>
   <p>Bundled IONOS SDK modules (one per API wired into the CLI) and cumulative unique commit authors, per release.</p>
   <canvas id="c_sdk"></canvas></div>
@@ -162,10 +174,15 @@ html = f"""<!DOCTYPE html>
   <p>Tagged stable releases (pre-releases excluded) grouped by calendar quarter, across all {sum(c['releases'] for c in cadence) if cadence else 0} releases. Not affected by the version selector.</p>
   <canvas id="c_cadence"></canvas></div>
 
-<h2 class="sec">Live API journey</h2>
-<div class="panel"><h3>Create datacenter + LAN, waiting for readiness</h3>
-  <p>Same journey against the oldest and newest binary via the live API. Command count and keystrokes are comparable — core compute was already ergonomic in 2021. The real change is <em>how</em> waiting works: old commands each hand-rolled their own <code>--wait-for-request</code> (request-level, duplicated code, added command by command); the new global <code>--wait</code> is defined once and every command — current and future — inherits it automatically, waiting for the resource to reach AVAILABLE state with a shared <code>--timeout</code>. It blocks longer here (22s vs 6s) because it guarantees more.</p>
-  {jr}</div>
+<h2 class="sec">Stability &amp; backward compatibility</h2>
+<div class="panel"><h3>Visible commands added and removed per release</h3>
+  <p>End-user commands added (up) and removed (down) between consecutive releases, across all releases (not affected by the selector). Removals are the main source of breaking changes; recent restructures keep removed commands as hidden aliases so existing scripts keep working.</p>
+  <canvas id="c_churn"></canvas></div>
+
+<h2 class="sec">Capability comparison</h2>
+<div class="panel"><h3>What the CLI can do — early ionosctl vs today</h3>
+  <p>Concrete capabilities, not wall-clock. Command speed is bounded by the API; the CLI's job is to be powerful, trustable and stable. A faster wait matters less than a wait you can trust to mean the resource is actually ready.</p>
+  {comp_table}</div>
 
 <footer>
   Reproducible: <code>make</code> rebuilds everything. <code>make full</code> builds all stable tags for the version selector. <code>make users</code> refreshes Snap install base. <code>make sprint</code> diffs HEAD vs ~3 weeks ago.
@@ -208,12 +225,15 @@ function resample(months, stopISO){{
   const targets=[]; let t=anchor;
   while(t>=stop){{ targets.push(t); t-=months*30.44*DAY; }}
   if(targets[targets.length-1]>stop) targets.push(stop);
+  const inRange=D.filter(r=>parse(r.date)>=stop-DAY);
   const chosen=new Map();  // version -> row, dedup, keep closest pick
   for(const tg of targets){{
     let best=null,bd=Infinity;
-    for(const r of D){{const rd=parse(r.date); if(rd<stop-DAY) continue; const dist=Math.abs(rd-tg); if(dist<bd){{bd=dist;best=r;}}}}
+    for(const r of inRange){{const dist=Math.abs(parse(r.date)-tg); if(dist<bd){{bd=dist;best=r;}}}}
     if(best) chosen.set(best.version,best);
   }}
+  // always pin the oldest in-range release and the newest, so the axis truly spans "show back to" -> today
+  if(inRange.length){{ chosen.set(inRange[0].version,inRange[0]); chosen.set(D[D.length-1].version,D[D.length-1]); }}
   return [...chosen.values()].sort((a,b)=>parse(a.date)-parse(b.date));
 }}
 
@@ -225,9 +245,6 @@ const line=(label,data,color,f=false)=>({{label,data,borderColor:color,backgroun
 function render(S){{
   destroy(); CUR=S;
   const L=S.map(r=>r.version+' · '+r.date.slice(0,7));
-  mk('c_cmds',{{type:'line',data:{{labels:L,datasets:[
-    line('Total commands',S.map(r=>r.commands),acc,true),
-    line('End-user commands',S.map(r=>r.leaf_commands),good)]}},options:base()}});
   mk('c_sdk',{{type:'line',data:{{labels:L,datasets:[
     line('Bundled API SDKs',S.map(r=>r.sdk_deps),acc,true),
     line('Contributors',S.map(r=>r.contributors),warn)]}},options:base()}});
@@ -262,7 +279,7 @@ const CAPS=[['wait','Wait for ready — --wait'],['query_jmespath','JMESPath que
   ['order_by','Order results — --order-by'],['depth','Response depth — --depth'],
   ['no_headers','Scriptable output — --no-headers'],['cols','Column selection — --cols']];
 function buildCapGrid(S){{
-  const cols='250px repeat('+S.length+',1fr)';
+  const cols='230px repeat('+S.length+',minmax(22px,1fr))';
   let h='<div class="capgrid"><div class="caprow caphdr" style="grid-template-columns:'+cols+'"><div class="capname"></div>'+
     S.map(r=>'<div class="capcell caphv">'+r.version.replace('v','')+'</div>').join('')+'</div>';
   for(const [k,name] of CAPS){{
@@ -272,7 +289,11 @@ function buildCapGrid(S){{
   h+='</div>'; document.getElementById('capgrid').innerHTML=h;
 }}
 
-// independent charts (not resampled)
+// independent charts (not resampled — every release)
+new Chart(c_churn,{{type:'bar',data:{{labels:D.map(r=>r.version),datasets:[
+  {{label:'commands added',data:D.map(r=>r.cmds_added),backgroundColor:good+'cc'}},
+  {{label:'commands removed',data:D.map(r=>-(r.cmds_removed||0)),backgroundColor:red+'cc'}}]}},
+  options:base({{scales:{{x:{{...gc,stacked:true,ticks:{{color:mut,autoSkip:true,maxRotation:90}}}},y:{{...gc,stacked:true,beginAtZero:true}}}}}})}});
 new Chart(c_cadence,{{type:'bar',data:{{labels:CAD.map(c=>c.quarter),datasets:[
   {{label:'Releases',data:CAD.map(c=>c.releases),backgroundColor:acc+'cc',borderRadius:4}}]}},
   options:base({{plugins:{{legend:{{display:false}}}}}})}});

@@ -34,9 +34,15 @@ for t in tags:
         if not path.endswith(".go") or path.endswith("_test.go"):
             continue
         low = path.lower()
+        # assign each file to ONE resource: the keyword that appears earliest in the path
+        # (so commands/compute/k8s/nodepool/lan/... counts as k8s, not lan)
+        best_r, best_pos = None, 1e9
         for r in RESOURCES:
-            if RES_RE[r].search(low):
-                buckets[r] += int(cnt)
+            m = RES_RE[r].search(low)
+            if m and m.start() < best_pos:
+                best_r, best_pos = r, m.start()
+        if best_r:
+            buckets[best_r] += int(cnt)
     date = sh("git", "log", "-1", "--format=%ad", "--date=short", t).strip()
     rows.append((t, date, *[buckets[r] for r in RESOURCES]))
 

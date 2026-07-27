@@ -7,7 +7,8 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA="$ROOT/data"; mkdir -p "$DATA"
 SNAP=ionosctl
-METRIC="${1:-installed_base_by_version}"
+# weekly_installed_base_* = weekly ACTIVE devices (users active that week)
+METRIC="${1:-weekly_installed_base_by_version}"
 OUT=$DATA/users.json
 today=$(date +%F)
 tmp=$(mktemp -d)

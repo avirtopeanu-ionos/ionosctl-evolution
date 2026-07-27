@@ -47,9 +47,19 @@ else:
 # only versions present in BOTH introspect and meta; sort chronologically
 ORDER = sorted((v for v in intro if v in meta), key=lambda v: meta[v]["date"])
 rows = []
+prev_leaves = None   # for command churn: added / removed vs previous release
 for v in ORDER:
     i = intro[v]; m = meta[v]
     own = m["own_loc"]; cmds = i["total_commands"]; clones = m["clone_groups"]
+    # signature = last two path tokens (resource + verb) so top-level regrouping
+    # (e.g. `datacenter list` -> `compute datacenter list`) is NOT counted as churn
+    cur_leaves = set(" ".join(p.split()[-2:]) for p in i.get("leaf_list", []))
+    if prev_leaves is None:
+        added = removed = 0            # first release = baseline, no diff
+    else:
+        added = len(cur_leaves - prev_leaves)
+        removed = len(prev_leaves - cur_leaves)
+    prev_leaves = cur_leaves
     rows.append({
         "version": v,
         "date": m["date"],
@@ -78,6 +88,8 @@ for v in ORDER:
         "clone_groups": clones,
         "clones_per_10k": round(clones / own * 10000, 1) if own else 0,
         "product_loc": {p: int(file_evo.get(v, {}).get(p, 0) or 0) for p in PRODUCTS},
+        "cmds_added": added,
+        "cmds_removed": removed,
     })
 
 print(f"source: {'FULL (all stable tags)' if FULL else 'sampled (10 tags)'} — {len(rows)} versions")

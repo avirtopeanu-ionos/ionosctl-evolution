@@ -154,5 +154,7 @@ row = {
     "deprecated_count": deprecated_count,
     "example_coverage": example_coverage,
     "leaves_with_example": leaves_with_example,
+    # full leaf-command paths, for diffing added/removed commands between releases
+    "leaf_list": sorted(" ".join(p) for p in leaves),
 }
 print(json.dumps(row))
