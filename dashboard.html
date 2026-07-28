@@ -128,7 +128,7 @@
 
 <h2 class="sec">Stability &amp; backward compatibility</h2>
 <div class="panel"><h3>Visible commands added and removed per release</h3>
-  <p>End-user commands added (up) and removed (down) between consecutive releases, across all releases (not affected by the selector). Removals are the main source of breaking changes; recent restructures keep removed commands as hidden aliases so existing scripts keep working.</p>
+  <p>Diff of the visible <code>--help</code> command tree between consecutive releases, across all releases (not affected by the selector). Commands are matched by resource + verb (the last two path tokens), so top-level regrouping — e.g. <code>datacenter list</code> → <code>compute datacenter list</code> — is <em>not</em> counted as churn. Caveat: a command hidden for backward compatibility drops out of <code>--help</code>, so it counts as "removed" here unless a visible command keeps the same resource + verb — even though it still works. Removals are the main source of breaking changes.</p>
   <canvas id="c_churn"></canvas></div>
 
 <footer>
